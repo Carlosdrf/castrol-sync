@@ -6,10 +6,16 @@ import time
 
 load_dotenv()
 
+webhook_session = requests.Session()
+
+webhook_session.headers.update({
+    "x-api-key": os.getenv('WEBHOOK_CLIENT_API')
+})
+
 COMPANY_ID=os.getenv('COMPANY_ID')
 WEBSITE_ID=os.getenv('WEBSITE_ID')
-BASE_URL = os.getenv('BASE_URL')
-COMPANY = os.getenv('COMPANY')
+BASE_URL=os.getenv('BASE_URL')
+COMPANY=os.getenv('COMPANY')
 
 BASE_WEBHOOK_URL=os.getenv('BASE_WEBHOOK_URL')
 ITEMS_WEBHOOK_ID=os.getenv('ITEMS_WEBHOOK_ID')
@@ -22,8 +28,20 @@ DISCOUNT_WEBHOOK_ID=os.getenv('DISCOUNT_WEBHOOK_ID')
 DISCOUNT_GROUP_FIELDS = {
     'mapping': [
         {
-            "sourceId": "EnhancedDiscountGroups/DiscountGroupLineCollection",
-            "field": "discountGroups",
+            "sourceId": "AbsEntry",
+            "field": "identifier",
+        },
+        {
+            "sourceId": "ObjectCode",
+            "field": "code",
+        },
+        {
+            "sourceId": "Type",
+            "field": "type",
+        },
+        {
+            "sourceId": "DiscountGroupLineCollection",
+            "field": "discountGroupLine",
             'fields': [
                 {
                     "sourceId": "ObjectCode",
@@ -35,39 +53,11 @@ DISCOUNT_GROUP_FIELDS = {
                 },
                 {
                     "sourceId": "ObjectType",
-                    "field": "objectType",
+                    "field": "type",
                 },
             ],
         },
-        {
-            "sourceId": "BusinessPartnerGroups",
-            "field": "businessPartnerGroups",
-            'fields': [
-                {
-                    "sourceId": "Name",
-                    "field": "name",
-                },
-                {
-                    "sourceId": "Code",
-                    "field": "code",
-                },
-            ],
-        },
-        {
-            "sourceId": "Manufacturers",
-            "field": "manufacturers",
-            'fields': [
-                {
-                    "sourceId": "Code",
-                    "field": "code",
-                },
-                {
-                    "sourceId": "ManufacturerName",
-                    "field": "name",
-                },
-            ],
-        },
-        
+                
     ]
 }
 
@@ -125,6 +115,10 @@ ITEM_FIELDS = {
         {
             "sourceId": "QuantityOnStock",
             "field": "quantity"
+        },
+        {
+            "sourceId": "Manufacturer",
+            "field": "manufacturer"
         },
         {
             "sourceId": "ItemPrices",
@@ -293,11 +287,10 @@ def handler(event = None):
         # price_lists = processPriceListRequest(s, products)
 
         # print(clients.get('groupCodes'))
-        # clientGroups = clients.get('groupCodes')
 
         # client_lists = processClientsList(s, clients, price_lists)
 
-        # queryDiscounts = processDiscountsRequest(s, clientGroups)
+        # queryDiscounts = processDiscountsRequest(s, clients, price_lists)
 
 # authorization request
 def authorization(s: requests):
@@ -331,7 +324,7 @@ def listClients(s: requests, next_link: str = None):
 
 # request to list items
 def listItems(s: requests, nextLink = None):
-    endpoint = "Items?$select=ItemCode,ItemName,ItemsGroupCode,ItemPrices,QuantityOnStock,ItemWarehouseInfoCollection,U_awhatsapp&$filter=U_awhatsapp eq 's'"
+    endpoint = "Items?$select=ItemCode,ItemName,ItemsGroupCode,ItemPrices,Manufacturer,QuantityOnStock,ItemWarehouseInfoCollection,U_awhatsapp&$filter=U_awhatsapp eq 's'"
     if nextLink is not None:
         endpoint = nextLink
     return s.get(f"{BASE_URL}/{endpoint}", verify=False)
@@ -345,19 +338,25 @@ def listPriceLists(s: requests, nextLink = None, query = None):
     return s.get(f"{BASE_URL}/{endpoint}", verify=False)
 
 # get SAP discount Groups
-def listDiscountGroups(s: requests, nextLink = None, query = ''):
-    endpoint = 'QueryService_PostQuery?'
-    entities = '$expand=EnhancedDiscountGroups($select=AbsEntry,ObjectCode,Type),EnhancedDiscountGroups/DiscountGroupLineCollection($select=ObjectCode,Discount,ObjectType,AbsEntry),Manufacturers($select=Code,ManufacturerName),BusinessPartnerGroups($select=Name,Code)'
-    filter = f"$filter=EnhancedDiscountGroups/Type eq 'C' and EnhancedDiscountGroups/DiscountGroupLineCollection/ObjectType eq '43' and EnhancedDiscountGroups/DiscountGroupLineCollection/AbsEntry eq EnhancedDiscountGroups/AbsEntry and BusinessPartnerGroups/Code eq EnhancedDiscountGroups/ObjectCode and Manufacturers/Code eq EnhancedDiscountGroups/DiscountGroupLineCollection/ObjectCode"
-    queryOption = f'{entities}&{filter} {query}'
-    if nextLink is not None:
-        queryOption = nextLink.replace(endpoint, '')
-    body = {
-        'QueryPath': '$crossjoin(EnhancedDiscountGroups,BusinessPartnerGroups,Manufacturers,EnhancedDiscountGroups/DiscountGroupLineCollection)',
-        'QueryOption': queryOption,
-    }
-    return s.post(f"{BASE_URL}/{endpoint}", json=body, verify=False)
+# def listDiscountGroups(s: requests, nextLink = None, query = ''):
+#     endpoint = 'QueryService_PostQuery?'
+#     entities = '$expand=EnhancedDiscountGroups($select=AbsEntry,ObjectCode,Type),EnhancedDiscountGroups/DiscountGroupLineCollection($select=ObjectCode,Discount,ObjectType,AbsEntry),Manufacturers($select=Code,ManufacturerName),BusinessPartnerGroups($select=Name,Code)'
+#     filter = f"$filter=EnhancedDiscountGroups/Type eq 'C' and EnhancedDiscountGroups/DiscountGroupLineCollection/ObjectType eq '43' and EnhancedDiscountGroups/DiscountGroupLineCollection/AbsEntry eq EnhancedDiscountGroups/AbsEntry and BusinessPartnerGroups/Code eq EnhancedDiscountGroups/ObjectCode and Manufacturers/Code eq EnhancedDiscountGroups/DiscountGroupLineCollection/ObjectCode"
+#     queryOption = f'{entities}&{filter} {query}'
+#     if nextLink is not None:
+#         queryOption = nextLink.replace(endpoint, '')
+#     body = {
+#         'QueryPath': '$crossjoin(EnhancedDiscountGroups,BusinessPartnerGroups,Manufacturers,EnhancedDiscountGroups/DiscountGroupLineCollection)',
+#         'QueryOption': queryOption,
+#     }
+#     return s.post(f"{BASE_URL}/{endpoint}", json=body, verify=False)
 
+def listDiscountGroups(s: requests, BPCode: str, BPGCode: str, next_link: str = None):
+    filter = f"$filter=(Type eq 'C' and ObjectCode eq '{BPGCode}') or (Type eq 'S' and ObjectCode eq '{BPCode}') or (Type eq 'A') or (Type eq 'V' and ObjectCode eq '{BPGCode}')"
+    endpoint = f'EnhancedDiscountGroups?{filter}'
+    if next_link is not None:
+        endpoint = next_link
+    return s.get(f"{BASE_URL}/{endpoint}", verify=False)
 
 def listDistributionCenters(s: requests, next_link = None, query = ''):
     endpoint = 'Warehouses'
@@ -415,20 +414,20 @@ def processFields(items, mapping_fields, additional_fields = None):
 def streamData(s: requests, endpoint, payload: dict[str, any]):
     try: 
         print('sending request...')
-        request = requests.post(f"{BASE_WEBHOOK_URL}/{endpoint}", json=payload)
+        request = webhook_session.post(f"{BASE_WEBHOOK_URL}/{endpoint}", json=payload)
+        print(request.json())
         request.raise_for_status()
         return request
     except requests.exceptions.RequestException as e:
         print('exception')
         print(e)
-    except:
-        print('error')
+    except Exception as e:
+        print(f'error: {e}')
 
 # handle clients stream data
 def processClientsRequest(s: requests):
     next_link = None
     data = []
-    groupCodes = []
     
     while True:
         clients_response = listClients(s, next_link)
@@ -453,6 +452,8 @@ def processClientsRequest(s: requests):
                 'street': item.get('addresses').get('street'),
                 'tax_code': item.get('addresses').get('tax_code'),
                 'property_product_pricelist': item.get('priceLists').get('name'),
+                'distribution_center_id': 'Almacén Veracruz',
+                'list_id': item.get('priceLists').get('listId'),
                 'currency_id': item.get('priceLists').get('currency_id'),
                 'listId': item.get('priceLists').get('listId'),
                 'email': email,
@@ -469,7 +470,7 @@ def processClientsRequest(s: requests):
         next_link = clients_response.json().get('odata.nextLink')
         if next_link is None:
             break
-    return prepareResponse(payload, 'clients', {'groupCodes': groupCodes})
+    return data
 
 def prepareResponse(response, entity = None, additional_attr = {}):
     return {
@@ -505,8 +506,8 @@ def processItemsRequest(s: requests):
                 STOCK_FIELDS.get('mapping'),
                 )
             
-            streamData(s, STOCK_WEBHOOK_ID, prepareResponse(stock_fields, 'Stock'))
-            time.sleep(0.5)
+            # streamData(s, STOCK_WEBHOOK_ID, prepareResponse(stock_fields, 'Stock'))
+            # time.sleep(0.5)
 
         
         streamData(s, ITEMS_WEBHOOK_ID, prepareResponse(payload))
@@ -540,6 +541,8 @@ def processPriceListRequest(s: requests, items = None):
                 for price in item.get('prices'):
                     if price.get('listId') == list.get('listId'):
                         list['lines'].append({
+                            'itemsGroupCode': item.get('itemsGroupCode'),
+                            'manufacturer': item.get('manufacturer'),
                             'product_tmpl_id': item.get('default_code'),
                             'name': item.get('name'),
                             'currency_id': price.get('currency_id'),
@@ -600,33 +603,98 @@ def processClientsList(s: requests, clients, price_lists):
     return data
 
 # process discount groups data
-def processDiscountsRequest(s: requests, client_groups: list):
-    clients_map = map(str, client_groups)
-    clients_query = f"and (BusinessPartnerGroups/Code eq {(' or BusinessPartnerGroups/Code eq ').join(clients_map)})"
-    print(clients_query)
-
-    data = []
+def processDiscountsRequest(s: requests, clients: list, price_lists: list):
     next_link = None
-    while True:
-        response = listDiscountGroups(s, next_link, clients_query)
-        payload = processFields(
-            get_response(response),
-            DISCOUNT_GROUP_FIELDS.get('mapping'),
-        )
+    update_clients = []
+    client_price_lists = []
+    i = 0
+    MAX_ELEMENTS = len(clients)
+    for index, client in enumerate(clients, 1):
+        print(index)
+        i = i + 1
+        for list in price_lists:
+            # if list['listId'] == 15:
+            if client['list_id'] == list['listId'] and client['commerce_id'] == 'C022904':
+                discount_exists=False
+                data = []
+                print(i)
 
-        streamData(s, DISCOUNT_WEBHOOK_ID, prepareResponse(payload, 'discounts'))
+                client_list = {
+                    **list,
+                    # "listId": f"{list['listId']}-C01101",
+                    # "name": f"{list['name']} - Gerardo Vera Arroyo",
+                    "listId": f"{list['listId']}-{client['commerce_id']}",
+                    "name": f"{list['name']} - {client['name']}",
+                    'lines': []
+                }
 
-        data = [
-            *data,
-            *payload,
-        ]
+                while True:
+                    time.sleep(0.2)
+                    response = listDiscountGroups(s, client['commerce_id'], client['groupCode'], next_link)
+                    # response = listDiscountGroups(s, 'C01101', 114, next_link)
 
-        next_link = response.json().get('odata.nextLink')
-        # break
-        if next_link is None:
-            break
+                    payload = processFields(
+                        get_response(response),
+                        DISCOUNT_GROUP_FIELDS.get('mapping'),
+                    )
 
-    return data
+                    data = [
+                        *data,
+                        *payload,
+                    ]
+
+                    next_link = response.json().get('odata.nextLink')
+                    if next_link is None:
+                        break
+                for item in list.get('lines'):
+                    largest_discount = 0.0
+                    for discount in data:
+                        for discountLine in discount.get('discountGroupLine'):
+                            if item['itemsGroupCode'] == discountLine['code'] and discountLine['type'] == 'dgboItemGroups':
+                                largest_discount = discountLine['discount'] if discountLine['discount'] > largest_discount else largest_discount
+                            if item['product_tmpl_id'] == discountLine['code'] and discountLine['type'] == 8:
+                                largest_discount = discountLine['discount'] if discountLine['discount'] > largest_discount else largest_discount
+                            if str(item['manufacturer']) == discountLine['code'] and discountLine['type'] == 'dgboManufacturer':
+                                largest_discount = discountLine['discount'] if discountLine['discount'] > largest_discount else largest_discount
+                    
+                    final_price = item['fixed_price'] - ((item['fixed_price'] * largest_discount) / 100)
+                    client_list['lines'].append({
+                        **item,
+                        'discount': largest_discount,
+                        'final_price': final_price,
+                    })
+                    if largest_discount == 0:
+                        print('no discount in here')
+                    else:
+                        discount_exists = True
+                        print('there is a discount in here')
+                print(discount_exists)
+                if discount_exists:
+                    client_price_lists.append(client_list)
+                    update_clients.append({
+                        **client,
+                        'property_product_pricelist': f"{list['listId']}-{client['commerce_id']}"
+                    })
+                print(list)
+
+            else:
+                continue
+        if i == 50 or index == MAX_ELEMENTS:
+            print(index, MAX_ELEMENTS)
+
+            i = 0
+            if len(update_clients) > 0:
+                streamData(s, CLIENTS_WEBHOOK_ID, prepareResponse(update_clients, 'Update Clients list'))
+            if len(client_price_lists) > 0:
+                streamData(s, DISCOUNT_WEBHOOK_ID, prepareResponse(client_price_lists, 'Discounts Price list'))
+            print(update_clients)
+            print(client_price_lists)
+            update_clients = []
+            client_price_lists = []
+            time.sleep(0.5)
+            # break
+
+    # return data
 
 def get_response(response: requests.Response):
     return response.json().get('value')
