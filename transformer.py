@@ -218,6 +218,10 @@ CLIENT_FIELDS = {
                     "sourceId": "GroupCode",
                     "field": "groupCode",
                 },
+                {
+                    'sourceId': 'Sucursal',
+                    'field': 'sucursal',
+                },
             ],
         },
         {
@@ -311,8 +315,8 @@ def authorization(s: requests):
 
 def listClients(s: requests, next_link: str = None):
     endpoint = 'QueryService_PostQuery?'
-    entities = '$expand=BusinessPartners($select=CardName,Phone1,CardCode,PriceListNum,GroupCode,FederalTaxID),BusinessPartners/BPAddresses($select=Country,State,City,ZipCode,Street,TaxCode),PriceLists($select=PriceListName,DefaultPrimeCurrency,PriceListNo)'
-    filter = f"$filter=BusinessPartners/Properties26 eq 'tYES' and BusinessPartners/PriceListNum eq PriceLists/PriceListNo and BusinessPartners/BPAddresses/BPCode eq BusinessPartners/CardCode and not(BusinessPartners/BPAddresses/TaxCode eq '')"
+    entities = '$expand=BusinessPartners($select=CardName,Phone1,CardCode,PriceListNum,GroupCode,FederalTaxID,Properties26,Properties1,Properties2,Properties3,Properties4,Properties5,Properties6),BusinessPartners/BPAddresses($select=Country,State,City,ZipCode,Street,TaxCode),PriceLists($select=PriceListName,DefaultPrimeCurrency,PriceListNo)'
+    filter = f"$filter=BusinessPartners/U_Cwhatsapp eq 'S' and BusinessPartners/PriceListNum eq PriceLists/PriceListNo and BusinessPartners/BPAddresses/BPCode eq BusinessPartners/CardCode and not(BusinessPartners/BPAddresses/TaxCode eq '')"
     queryOption = f'{entities}&{filter}'
     if next_link is not None:
         queryOption = next_link.replace(endpoint, '')
@@ -424,6 +428,36 @@ def streamData(s: requests, endpoint, payload: dict[str, any]):
     except Exception as e:
         print(f'error: {e}')
 
+
+def propertiesFieldManaging(response: requests.Response):
+    data = []
+    clients_response = response.json().get('value')
+    for client in clients_response:
+        print(client.get('BusinessPartners'))
+        business = client.get('BusinessPartners')
+        sucursal = 'Almacén Veracruz',
+        if business.get('Properties1') == 'Y':
+            sucursal = 'Almacén Villahermosa'
+        if business.get('Properties2') == 'Y':
+            sucursal = 'Almacén Tuxtla'
+        if business.get('Properties3') == 'Y':
+            sucursal = 'Almacén Tapachula'
+        if business.get('Properties4') == 'Y':
+            sucursal = 'Almacén Ciudad del Carmen'
+        if business.get('Properties5') == 'Y':
+            sucursal = 'Almacén Mérida'
+        if business.get('Properties6') == 'Y':
+            sucursal = 'Almacén Cancún'
+        data.append({
+            **client,
+            'BusinessPartners': {
+                **client.get('BusinessPartners'),
+                'Sucursal': sucursal,
+            },
+        })
+
+    return data
+
 # handle clients stream data
 def processClientsRequest(s: requests):
     next_link = None
@@ -431,8 +465,9 @@ def processClientsRequest(s: requests):
     
     while True:
         clients_response = listClients(s, next_link)
+        clients_list = propertiesFieldManaging(clients_response)
         clients_fields = processFields(
-            clients_response.json().get('value'),
+            clients_list,
             CLIENT_FIELDS.get('mapping'),
             CLIENT_FIELDS.get('additional_fields'),
             )
@@ -443,6 +478,7 @@ def processClientsRequest(s: requests):
                 'name': item.get('businessPartners').get('name'),
                 'phone': item.get('businessPartners').get('phone'),
                 'vat': item.get('businessPartners').get('vat'),
+                'sucursal': item.get('businessPartners').get('sucursal'),
                 'groupCode': item.get('businessPartners').get('groupCode'),
                 'commerce_id': item.get('businessPartners').get('commerce_id'),
                 'country_id': item.get('addresses').get('country_id'),
